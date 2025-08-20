@@ -18,6 +18,7 @@ func ReadConfig() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	
 	file, err := os.Open(filepath)
 	if err != nil {
 		return nil, err
@@ -34,12 +35,7 @@ func ReadConfig() (*Config, error) {
 	return &config, nil
 }
 
-func (*Config) SetUser(name string) error {
-	config, err := ReadConfig()
-	if err != nil {
-		return err
-	}
-
+func (config *Config) SetUser(name string) error {
 	if config == nil {
 		config = &Config{}
 	}
@@ -53,6 +49,7 @@ func (*Config) SetUser(name string) error {
 	if err != nil {
 		return err
 	}
+	
 	file, err := os.Create(filepath)
 	if err != nil {
 		return err
