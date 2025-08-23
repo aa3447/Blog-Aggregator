@@ -47,7 +47,7 @@ func (config *Config) SetUser(name string) error {
 	if config == nil {
 		config = &Config{}
 	}
-	if config.Current_user_name == name {
+	if name != "" && config.Current_user_name == name {
 		fmt.Println("User is already set to:", name)
 		return nil
 	}

@@ -82,6 +82,23 @@ func handlerRegister(s *State, cmd Command) error{
 	return nil
 }
 
+func handlerReset(s *State, cmd Command) error {
+	ctx := context.Background()
+	err := s.Db.ResetUsers(ctx)
+	if err != nil {
+		return fmt.Errorf("error resetting users: %v", err)
+	}
+	
+	s.CurrentState.Current_user_name = ""
+	err = s.CurrentState.SetUser("")
+	if err != nil {
+		return fmt.Errorf("error saving config: %v", err)
+	}
+
+	fmt.Println("All users have been reset and current user cleared.")
+	return nil
+}
+
 func (c *Commands) Run(s *State, cmd Command) error {
 	if handler, exists := c.CommandsMap[cmd.Name]; exists {
 		return handler(s, cmd)
@@ -99,4 +116,5 @@ func (c *Commands) registerCommand(name string, f func(*State, Command) error){
 func (c *Commands) Init() {
 	c.registerCommand("login", handlerLogin)
 	c.registerCommand("register", handlerRegister)
+	c.registerCommand("reset", handlerReset)
 }

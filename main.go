@@ -33,7 +33,7 @@ func main() {
 
 	
 	commandArgs := os.Args[1:]
-	if len(commandArgs) < 2 {
+	if len(commandArgs) == 0 {
 		fmt.Println("No command provided")
 		os.Exit(1)
 	}
