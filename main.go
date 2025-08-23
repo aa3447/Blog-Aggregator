@@ -1,9 +1,13 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"home/aa3447/workspace/github.com/aa3447/blog-aggregator/internal/config"
+	"home/aa3447/workspace/github.com/aa3447/blog-aggregator/internal/database"
+	
+	_ "github.com/lib/pq"
 )
 
 func main() {
@@ -12,12 +16,21 @@ func main() {
 		fmt.Println("Error reading config:", err)
 		os.Exit(1)
 	}
+
+	db, err := sql.Open("postgres", configFile.Db_url)
+	if err != nil {
+		fmt.Println("Error connecting to database:", err)
+		os.Exit(1)
+	}
+	defer db.Close()
 	
 	newState := &config.State{
+		Db: database.New(db),
 		CurrentState: configFile,
 	}
 	cmds := &config.Commands{}
 	cmds.Init()
+
 	
 	commandArgs := os.Args[1:]
 	if len(commandArgs) < 2 {

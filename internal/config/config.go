@@ -35,6 +35,14 @@ func ReadConfig() (*Config, error) {
 	return &config, nil
 }
 
+func getConfigFilePath() (string, error) {
+	homePath, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return homePath + ConfigFileName, nil
+}
+
 func (config *Config) SetUser(name string) error {
 	if config == nil {
 		config = &Config{}
@@ -64,11 +72,5 @@ func (config *Config) SetUser(name string) error {
 	return nil
 }
 
-func getConfigFilePath() (string, error) {
-	homePath, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return homePath + ConfigFileName, nil
-}
+
 
