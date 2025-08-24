@@ -82,6 +82,37 @@ func handlerRegister(s *State, cmd Command) error{
 	return nil
 }
 
+func handlerGetUsers(s *State, cmd Command) error {
+	ctx := context.Background()
+	users, err := s.Db.GetAllUsers(ctx)
+	
+	if err != nil {
+		return fmt.Errorf("error retrieving users: %v", err)
+	}
+	if len(users) == 0 {
+		fmt.Println("No users found.")
+		return nil
+	}
+	
+	fmt.Println("Registered Users:")
+	for _, user := range users {
+		var userData string
+		/*userData += fmt.Sprintf("- %s (ID: %s, CreatedAt: %s)", user.Name, user.ID, user.CreatedAt.Format(time.RFC3339))
+		
+		if user.UpdatedAt != user.CreatedAt {
+			userData += fmt.Sprintf("  UpdatedAt: %s", user.UpdatedAt.Format(time.RFC3339))
+		}*/
+		userData += fmt.Sprintf("- %s", user.Name)
+		if s.CurrentState.Current_user_name == user.Name {
+			userData += " (current)"
+		}
+		
+		fmt.Println(userData)
+	}
+	
+	return nil
+}
+
 func handlerReset(s *State, cmd Command) error {
 	ctx := context.Background()
 	err := s.Db.ResetUsers(ctx)
@@ -117,4 +148,5 @@ func (c *Commands) Init() {
 	c.registerCommand("login", handlerLogin)
 	c.registerCommand("register", handlerRegister)
 	c.registerCommand("reset", handlerReset)
+	c.registerCommand("users", handlerGetUsers)
 }
