@@ -8,6 +8,7 @@ import (
 	"log"
 	"github.com/google/uuid"
 	"home/aa3447/workspace/github.com/aa3447/blog-aggregator/internal/database"
+	"home/aa3447/workspace/github.com/aa3447/blog-aggregator/internal/rss"
 )
 
 type State struct {
@@ -22,6 +23,14 @@ type Command struct {
 
 type Commands struct {
 	CommandsMap map[string]func(*State, Command) error
+}
+
+func (c *Commands) Init() {
+	c.registerCommand("login", handlerLogin)
+	c.registerCommand("register", handlerRegister)
+	c.registerCommand("reset", handlerReset)
+	c.registerCommand("users", handlerGetUsers)
+	c.registerCommand("agg", handlerFetchFeed)
 }
 
 func handlerLogin(s *State, cmd Command) error{
@@ -97,17 +106,30 @@ func handlerGetUsers(s *State, cmd Command) error {
 	fmt.Println("Registered Users:")
 	for _, user := range users {
 		var userData string
-		/*userData += fmt.Sprintf("- %s (ID: %s, CreatedAt: %s)", user.Name, user.ID, user.CreatedAt.Format(time.RFC3339))
+		userData += fmt.Sprintf("- %s (ID: %s, CreatedAt: %s)", user.Name, user.ID, user.CreatedAt.Format(time.RFC3339))
 		
 		if user.UpdatedAt != user.CreatedAt {
 			userData += fmt.Sprintf("  UpdatedAt: %s", user.UpdatedAt.Format(time.RFC3339))
-		}*/
-		userData += fmt.Sprintf("- %s", user.Name)
+		}
 		if s.CurrentState.Current_user_name == user.Name {
 			userData += " (current)"
 		}
 		
 		fmt.Println(userData)
+	}
+	
+	return nil
+}
+
+func handlerFetchFeed(s *State, cmd Command) error {
+	ctx := context.Background()
+	xml, err := rss.FetchFeed(ctx, cmd.Args[0])
+	if err != nil {
+		return fmt.Errorf("error fetching feed: %v", err)
+	}
+	fmt.Println(xml)
+	for _, item := range xml.Channel.Item {
+		fmt.Println(item)	
 	}
 	
 	return nil
@@ -130,6 +152,7 @@ func handlerReset(s *State, cmd Command) error {
 	return nil
 }
 
+
 func (c *Commands) Run(s *State, cmd Command) error {
 	if handler, exists := c.CommandsMap[cmd.Name]; exists {
 		return handler(s, cmd)
@@ -144,9 +167,3 @@ func (c *Commands) registerCommand(name string, f func(*State, Command) error){
 	c.CommandsMap[name] = f
 }
 
-func (c *Commands) Init() {
-	c.registerCommand("login", handlerLogin)
-	c.registerCommand("register", handlerRegister)
-	c.registerCommand("reset", handlerReset)
-	c.registerCommand("users", handlerGetUsers)
-}
