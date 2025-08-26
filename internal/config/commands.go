@@ -6,7 +6,9 @@ import (
 	"database/sql"
 	"time"
 	"log"
+	
 	"github.com/google/uuid"
+	
 	"home/aa3447/workspace/github.com/aa3447/blog-aggregator/internal/database"
 	"home/aa3447/workspace/github.com/aa3447/blog-aggregator/internal/rss"
 )
@@ -27,10 +29,11 @@ type Commands struct {
 
 func (c *Commands) Init() {
 	c.registerCommand("login", handlerLogin)
-	c.registerCommand("register", handlerRegister)
+	c.registerCommand("register", handlerRegisterUser)
 	c.registerCommand("reset", handlerReset)
 	c.registerCommand("users", handlerGetUsers)
 	c.registerCommand("agg", handlerFetchFeed)
+	c.registerCommand("addfeed", handlerAddFeed)
 }
 
 func handlerLogin(s *State, cmd Command) error{
@@ -57,7 +60,7 @@ func handlerLogin(s *State, cmd Command) error{
 	return nil
 }
 
-func handlerRegister(s *State, cmd Command) error{
+func handlerRegisterUser(s *State, cmd Command) error{
 	if len(cmd.Args) == 0 {
 		return fmt.Errorf("register command requires username argument")
 	}
@@ -79,15 +82,53 @@ func handlerRegister(s *State, cmd Command) error{
 		Name:      userName,
 	}
 
-	_, err = s.Db.CreateUser(ctx, newUser)
+	currentUser, err := s.Db.CreateUser(ctx, newUser)
 	if err != nil {
 		return fmt.Errorf("error creating user: %v", err)
 	}
 
-	fmt.Println("User registered:", userName)
-	log.Printf("User Info: %#v\n", newUser)
+	fmt.Println("User registered:", currentUser.Name)
+	log.Printf("User Info: %#v\n", currentUser)
 	
-	handlerLogin(s, Command{Name: "login", Args: []string{userName}})
+	handlerLogin(s, Command{Name: "login", Args: []string{currentUser.Name}})
+	return nil
+}
+
+func handlerAddFeed(s *State, cmd Command) error{
+	if len(cmd.Args) < 2 {
+		return fmt.Errorf("register command requires name and url argument")
+	}
+	if s.CurrentState.Current_user_name == "" {
+		return fmt.Errorf("no user logged in, please login first")
+	}
+	
+	name := cmd.Args[0]
+	url := cmd.Args[1]
+	userName := s.CurrentState.Current_user_name
+	ctx := context.Background()
+
+	existingUser, err := s.Db.GetUserByName(ctx, userName)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("error checking existing user: %v", err)
+	}
+
+	newFeed := database.CreateFeedParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Name:      name,
+		Url:       url,
+		UserID:    uuid.NullUUID{UUID: existingUser.ID, Valid: true},
+	}
+
+	currentFeed, err := s.Db.CreateFeed(ctx, newFeed)
+	if err != nil {
+		return fmt.Errorf("error creating feed: %v", err)
+	}
+
+	fmt.Println("User feed:", currentFeed.Url)
+	log.Printf("Feed Info: %#v\n", currentFeed)
+	
 	return nil
 }
 
