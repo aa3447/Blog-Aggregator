@@ -23,8 +23,14 @@ RETURNING *;
 -- name: GetUserByName :one
 SELECT * FROM users WHERE name = $1;
 
+-- name: GetUserByID :one
+SELECT * FROM users WHERE id = $1;
+
 -- name: GetAllUsers :many
 SELECT * FROM users;
+
+-- name: GetAllFeeds :many
+SELECT * FROM feeds;
 
 -- name: ResetUsers :exec
 DELETE FROM users;

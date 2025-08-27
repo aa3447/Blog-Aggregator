@@ -34,6 +34,7 @@ func (c *Commands) Init() {
 	c.registerCommand("users", handlerGetUsers)
 	c.registerCommand("agg", handlerFetchFeed)
 	c.registerCommand("addfeed", handlerAddFeed)
+	c.registerCommand("feeds", handlerGetFeeds)
 }
 
 func handlerLogin(s *State, cmd Command) error{
@@ -147,7 +148,7 @@ func handlerGetUsers(s *State, cmd Command) error {
 	fmt.Println("Registered Users:")
 	for _, user := range users {
 		var userData string
-		userData += fmt.Sprintf("- %s (ID: %s, CreatedAt: %s)", user.Name, user.ID, user.CreatedAt.Format(time.RFC3339))
+		userData += fmt.Sprintf("- %s (CreatedAt: %s)", user.Name, user.CreatedAt.Format(time.RFC3339))
 		
 		if user.UpdatedAt != user.CreatedAt {
 			userData += fmt.Sprintf("  UpdatedAt: %s", user.UpdatedAt.Format(time.RFC3339))
@@ -161,6 +162,45 @@ func handlerGetUsers(s *State, cmd Command) error {
 	
 	return nil
 }
+
+func handlerGetFeeds(s *State, cmd Command) error {
+	ctx := context.Background()
+	feeds, err := s.Db.GetAllFeeds(ctx)
+
+	if err != nil {
+		return fmt.Errorf("error retrieving feeds: %v", err)
+	}
+	if len(feeds) == 0 {
+		fmt.Println("No feeds found.")
+		return nil
+	}
+	
+	fmt.Println("Feeds:")
+	for _, feed := range feeds {
+		var userName string
+		if !feed.UserID.Valid {
+			return fmt.Errorf("feed %s has no associated user", feed.Name)
+		}
+
+		user, err := s.Db.GetUserByID(ctx, feed.UserID.UUID)
+		if err != nil {
+			return fmt.Errorf("error retrieving user for feed: %v", err)
+		}
+		userName = user.Name
+
+		var feedData string
+		feedData += fmt.Sprintf("- %s ( CreatedBy: %s, URL: %s, CreatedAt: %s )", feed.Name, userName, feed.Url, feed.CreatedAt.Format(time.RFC3339))
+		
+		if feed.UpdatedAt != feed.CreatedAt {
+			feedData += fmt.Sprintf("  UpdatedAt: %s", feed.UpdatedAt.Format(time.RFC3339))
+		}
+		
+		fmt.Println(feedData)
+	}
+	
+	return nil
+}
+
 
 func handlerFetchFeed(s *State, cmd Command) error {
 	ctx := context.Background()
