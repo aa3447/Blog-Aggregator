@@ -35,6 +35,7 @@ func (c *Commands) Init() {
 	c.registerCommand("agg", handlerFetchFeed)
 	c.registerCommand("addfeed", handlerAddFeed)
 	c.registerCommand("feeds", handlerGetFeeds)
+	c.registerCommand("follow", handlerFollowFeed)
 }
 
 func handlerLogin(s *State, cmd Command) error{
@@ -133,6 +134,52 @@ func handlerAddFeed(s *State, cmd Command) error{
 	return nil
 }
 
+func handlerFollowFeed(s *State, cmd Command) error {
+	if len(cmd.Args) < 1 {
+		return fmt.Errorf("follow command requires feed URL argument")
+	}
+	if s.CurrentState.Current_user_name == "" {
+		return fmt.Errorf("no user logged in, please login first")
+	}
+	
+	url := cmd.Args[0]
+	userName := s.CurrentState.Current_user_name
+	ctx := context.Background()
+
+	existingUser, err := s.Db.GetUserByName(ctx, userName)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("error checking existing user: %v", err)
+	}
+
+	existingFeed, err := s.Db.GetFeedByUrl(ctx, url)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("error checking existing feeds: %v", err)
+	}
+
+
+	newFeedFollow := database.CreateFeedFollowParams{
+		ID:		uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		UserID:    uuid.NullUUID{UUID: existingUser.ID, Valid: true},
+		FeedID:    uuid.NullUUID{UUID: existingFeed.ID, Valid: true},
+	}
+
+	currentFeedFollowSlice, err := s.Db.CreateFeedFollow(ctx, newFeedFollow)
+	if err != nil {
+		return fmt.Errorf("error creating feedFollow: %v", err)
+	}
+	if len(currentFeedFollowSlice) == 0 {
+		return fmt.Errorf("no feed follow record created")
+	}
+	currentFeedFollow := currentFeedFollowSlice[0]
+	
+	fmt.Printf("%s followed feed: %s/n", currentFeedFollow.Username, currentFeedFollow.FeedName)
+	log.Printf("FeedFollow Info: %#v\n", currentFeedFollow)
+	
+	return nil
+}
+
 func handlerGetUsers(s *State, cmd Command) error {
 	ctx := context.Background()
 	users, err := s.Db.GetAllUsers(ctx)
@@ -215,6 +262,7 @@ func handlerFetchFeed(s *State, cmd Command) error {
 	
 	return nil
 }
+
 
 func handlerReset(s *State, cmd Command) error {
 	ctx := context.Background()
