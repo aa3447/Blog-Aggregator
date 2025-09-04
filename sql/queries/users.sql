@@ -20,7 +20,7 @@ VALUES (
 )
 RETURNING *;
 
--- name: CreateFeedFollow :many
+-- name: CreateFeedFollow :one
 WITH inserted AS (
     INSERT INTO feed_follows (id, created_at, updated_at, user_id, feed_id)
     VALUES (
@@ -36,7 +36,8 @@ SELECT inserted.id, inserted.created_at, inserted.updated_at, users.id AS "user 
 FROM inserted
 JOIN users ON inserted.user_id = users.id
 JOIN feeds ON inserted.feed_id = feeds.id
-ORDER BY inserted.created_at DESC;
+ORDER BY inserted.created_at DESC
+LIMIT 1;
 
 
 -- name: GetUserByName :one
@@ -53,6 +54,14 @@ SELECT * FROM feeds;
 
 -- name: GetFeedByUrl :one
 SELECT * FROM feeds WHERE url = $1;
+
+-- name: GetFeedFollowsForUser :many
+SELECT feed_follows.id, users.name AS "username", feeds.name AS "feed name", feeds.url AS "feed url"
+FROM feed_follows
+JOIN users ON feed_follows.user_id = users.id
+JOIN feeds ON feed_follows.feed_id = feeds.id
+WHERE users.id = $1
+ORDER BY feed_follows.created_at DESC;
 
 -- name: ResetUsers :exec
 DELETE FROM users;

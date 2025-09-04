@@ -36,8 +36,11 @@ func (c *Commands) Init() {
 	c.registerCommand("addfeed", handlerAddFeed)
 	c.registerCommand("feeds", handlerGetFeeds)
 	c.registerCommand("follow", handlerFollowFeed)
+	c.registerCommand("following", handlerFollowing)
 }
 
+// Login sets the current user in the config if the user exists in the database.
+// Requires one argument: username.
 func handlerLogin(s *State, cmd Command) error{
 	if len(cmd.Args) == 0 {
 		return fmt.Errorf("login command requires username argument")
@@ -62,6 +65,8 @@ func handlerLogin(s *State, cmd Command) error{
 	return nil
 }
 
+// RegisterUser creates a new user in the database and sets it as the current user in the config.
+// Requires one argument: username.
 func handlerRegisterUser(s *State, cmd Command) error{
 	if len(cmd.Args) == 0 {
 		return fmt.Errorf("register command requires username argument")
@@ -96,6 +101,8 @@ func handlerRegisterUser(s *State, cmd Command) error{
 	return nil
 }
 
+// AddFeed creates a new feed in the database and automatically follows it for the current user.
+// Requires two arguments: feed name and feed URL.
 func handlerAddFeed(s *State, cmd Command) error{
 	if len(cmd.Args) < 2 {
 		return fmt.Errorf("register command requires name and url argument")
@@ -128,12 +135,19 @@ func handlerAddFeed(s *State, cmd Command) error{
 		return fmt.Errorf("error creating feed: %v", err)
 	}
 
+	err = handlerFollowFeed(s, Command{Name: "follow", Args: []string{url}})
+	if err != nil {
+		return fmt.Errorf("error following feed after creation: %v", err)
+	}
+
 	fmt.Println("User feed:", currentFeed.Url)
 	log.Printf("Feed Info: %#v\n", currentFeed)
 	
 	return nil
 }
 
+// FollowFeed creates a new feed follow relationship in the database for the current user and the specified feed URL.
+// Requires one argument: feed URL.
 func handlerFollowFeed(s *State, cmd Command) error {
 	if len(cmd.Args) < 1 {
 		return fmt.Errorf("follow command requires feed URL argument")
@@ -165,21 +179,18 @@ func handlerFollowFeed(s *State, cmd Command) error {
 		FeedID:    uuid.NullUUID{UUID: existingFeed.ID, Valid: true},
 	}
 
-	currentFeedFollowSlice, err := s.Db.CreateFeedFollow(ctx, newFeedFollow)
+	currentFeedFollow, err := s.Db.CreateFeedFollow(ctx, newFeedFollow)
 	if err != nil {
 		return fmt.Errorf("error creating feedFollow: %v", err)
 	}
-	if len(currentFeedFollowSlice) == 0 {
-		return fmt.Errorf("no feed follow record created")
-	}
-	currentFeedFollow := currentFeedFollowSlice[0]
 	
-	fmt.Printf("%s followed feed: %s/n", currentFeedFollow.Username, currentFeedFollow.FeedName)
+	fmt.Printf("%s followed feed: %s\n", currentFeedFollow.Username, currentFeedFollow.FeedName)
 	log.Printf("FeedFollow Info: %#v\n", currentFeedFollow)
 	
 	return nil
 }
 
+// GetUsers retrieves and prints all users from the database, indicating the current user.
 func handlerGetUsers(s *State, cmd Command) error {
 	ctx := context.Background()
 	users, err := s.Db.GetAllUsers(ctx)
@@ -210,6 +221,7 @@ func handlerGetUsers(s *State, cmd Command) error {
 	return nil
 }
 
+// GetFeeds retrieves and prints all feeds from the database, including their creators.
 func handlerGetFeeds(s *State, cmd Command) error {
 	ctx := context.Background()
 	feeds, err := s.Db.GetAllFeeds(ctx)
@@ -248,10 +260,16 @@ func handlerGetFeeds(s *State, cmd Command) error {
 	return nil
 }
 
-
+// FetchFeed fetches and prints the RSS feed from the specified URL.
+// Requires one argument: feed URL.
 func handlerFetchFeed(s *State, cmd Command) error {
+	if len(cmd.Args) < 1 {
+		return fmt.Errorf("follow command requires feed URL argument")
+	}
+
 	ctx := context.Background()
 	xml, err := rss.FetchFeed(ctx, cmd.Args[0])
+	
 	if err != nil {
 		return fmt.Errorf("error fetching feed: %v", err)
 	}
@@ -263,7 +281,36 @@ func handlerFetchFeed(s *State, cmd Command) error {
 	return nil
 }
 
+// Following lists all feeds followed by the current user.
+func handlerFollowing(s *State, cmd Command) error {
+	if s.CurrentState.Current_user_name == "" {
+		return fmt.Errorf("no user logged in, please login first")
+	}
 
+	userName := s.CurrentState.Current_user_name
+	ctx := context.Background()
+
+	existingUser, err := s.Db.GetUserByName(ctx, userName)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("error checking existing user: %v", err)
+	}
+
+	followedFeeds, err := s.Db.GetFeedFollowsForUser(ctx, existingUser.ID)
+	if err != nil {
+		return fmt.Errorf("error retrieving followed feeds: %v", err)
+	}
+	if len(followedFeeds) == 0 {
+		return fmt.Errorf("user %s is not following any feeds", userName)
+	}
+
+	for _, feed := range followedFeeds {
+		fmt.Printf("- %s (URL: %s)\n", feed.FeedName, feed.FeedUrl)
+	}
+	
+	return nil
+}
+
+// Reset removes all users from the database and clears the current user in the config.
 func handlerReset(s *State, cmd Command) error {
 	ctx := context.Background()
 	err := s.Db.ResetUsers(ctx)
