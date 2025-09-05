@@ -33,10 +33,10 @@ func (c *Commands) Init() {
 	c.registerCommand("reset", handlerReset)
 	c.registerCommand("users", handlerGetUsers)
 	c.registerCommand("agg", handlerFetchFeed)
-	c.registerCommand("addfeed", handlerAddFeed)
+	c.registerCommand("addfeed", userLoggedInWrapper(handlerAddFeed))
 	c.registerCommand("feeds", handlerGetFeeds)
-	c.registerCommand("follow", handlerFollowFeed)
-	c.registerCommand("following", handlerFollowing)
+	c.registerCommand("follow", userLoggedInWrapper(handlerFollowFeed))
+	c.registerCommand("following", userLoggedInWrapper(handlerFollowing))
 }
 
 // Login sets the current user in the config if the user exists in the database.
@@ -64,6 +64,7 @@ func handlerLogin(s *State, cmd Command) error{
 	fmt.Println("User set to:", cmd.Args[0])
 	return nil
 }
+
 
 // RegisterUser creates a new user in the database and sets it as the current user in the config.
 // Requires one argument: username.
@@ -101,94 +102,7 @@ func handlerRegisterUser(s *State, cmd Command) error{
 	return nil
 }
 
-// AddFeed creates a new feed in the database and automatically follows it for the current user.
-// Requires two arguments: feed name and feed URL.
-func handlerAddFeed(s *State, cmd Command) error{
-	if len(cmd.Args) < 2 {
-		return fmt.Errorf("register command requires name and url argument")
-	}
-	if s.CurrentState.Current_user_name == "" {
-		return fmt.Errorf("no user logged in, please login first")
-	}
-	
-	name := cmd.Args[0]
-	url := cmd.Args[1]
-	userName := s.CurrentState.Current_user_name
-	ctx := context.Background()
 
-	existingUser, err := s.Db.GetUserByName(ctx, userName)
-	if err != nil && err != sql.ErrNoRows {
-		return fmt.Errorf("error checking existing user: %v", err)
-	}
-
-	newFeed := database.CreateFeedParams{
-		ID:        uuid.New(),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-		Name:      name,
-		Url:       url,
-		UserID:    uuid.NullUUID{UUID: existingUser.ID, Valid: true},
-	}
-
-	currentFeed, err := s.Db.CreateFeed(ctx, newFeed)
-	if err != nil {
-		return fmt.Errorf("error creating feed: %v", err)
-	}
-
-	err = handlerFollowFeed(s, Command{Name: "follow", Args: []string{url}})
-	if err != nil {
-		return fmt.Errorf("error following feed after creation: %v", err)
-	}
-
-	fmt.Println("User feed:", currentFeed.Url)
-	log.Printf("Feed Info: %#v\n", currentFeed)
-	
-	return nil
-}
-
-// FollowFeed creates a new feed follow relationship in the database for the current user and the specified feed URL.
-// Requires one argument: feed URL.
-func handlerFollowFeed(s *State, cmd Command) error {
-	if len(cmd.Args) < 1 {
-		return fmt.Errorf("follow command requires feed URL argument")
-	}
-	if s.CurrentState.Current_user_name == "" {
-		return fmt.Errorf("no user logged in, please login first")
-	}
-	
-	url := cmd.Args[0]
-	userName := s.CurrentState.Current_user_name
-	ctx := context.Background()
-
-	existingUser, err := s.Db.GetUserByName(ctx, userName)
-	if err != nil && err != sql.ErrNoRows {
-		return fmt.Errorf("error checking existing user: %v", err)
-	}
-
-	existingFeed, err := s.Db.GetFeedByUrl(ctx, url)
-	if err != nil && err != sql.ErrNoRows {
-		return fmt.Errorf("error checking existing feeds: %v", err)
-	}
-
-
-	newFeedFollow := database.CreateFeedFollowParams{
-		ID:		uuid.New(),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-		UserID:    uuid.NullUUID{UUID: existingUser.ID, Valid: true},
-		FeedID:    uuid.NullUUID{UUID: existingFeed.ID, Valid: true},
-	}
-
-	currentFeedFollow, err := s.Db.CreateFeedFollow(ctx, newFeedFollow)
-	if err != nil {
-		return fmt.Errorf("error creating feedFollow: %v", err)
-	}
-	
-	fmt.Printf("%s followed feed: %s\n", currentFeedFollow.Username, currentFeedFollow.FeedName)
-	log.Printf("FeedFollow Info: %#v\n", currentFeedFollow)
-	
-	return nil
-}
 
 // GetUsers retrieves and prints all users from the database, indicating the current user.
 func handlerGetUsers(s *State, cmd Command) error {
@@ -281,21 +195,107 @@ func handlerFetchFeed(s *State, cmd Command) error {
 	return nil
 }
 
-// Following lists all feeds followed by the current user.
-func handlerFollowing(s *State, cmd Command) error {
-	if s.CurrentState.Current_user_name == "" {
-		return fmt.Errorf("no user logged in, please login first")
+// userLoggedInWrapper is a helper function that ensures a user is logged in before executing the handler.
+func userLoggedInWrapper(handler func(s *State, cmd Command, user database.User) error)  func(*State, Command) error {
+	return func(s *State, cmd Command) error {
+		if s.CurrentState.Current_user_name == "" {
+			return fmt.Errorf("no user logged in, please login first")
+		}
+		
+		userName := s.CurrentState.Current_user_name
+		ctx := context.Background()
+
+		existingUser, err := s.Db.GetUserByName(ctx, userName)
+		if err != nil && err != sql.ErrNoRows {
+			return fmt.Errorf("error checking existing user: %v", err)
+		}
+		
+		return handler(s, cmd, existingUser)
+	}
+}
+
+// AddFeed creates a new feed in the database and automatically follows it for the current user.
+// Requires two arguments: feed name and feed URL.
+// Wrapped with userLoggedInWrapper to ensure a user is logged in.
+func handlerAddFeed(s *State, cmd Command, user database.User) error{
+	if len(cmd.Args) < 2 {
+		return fmt.Errorf("register command requires name and url argument")
+	}
+	
+	name := cmd.Args[0]
+	url := cmd.Args[1]
+	ctx := context.Background()
+
+
+	newFeed := database.CreateFeedParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Name:      name,
+		Url:       url,
+		UserID:    uuid.NullUUID{UUID: user.ID, Valid: true},
 	}
 
+	currentFeed, err := s.Db.CreateFeed(ctx, newFeed)
+	if err != nil {
+		return fmt.Errorf("error creating feed: %v", err)
+	}
+
+	err = handlerFollowFeed(s, Command{Name: "follow", Args: []string{url}}, user)
+	if err != nil {
+		return fmt.Errorf("error following feed after creation: %v", err)
+	}
+
+	fmt.Println("User feed:", currentFeed.Url)
+	log.Printf("Feed Info: %#v\n", currentFeed)
+	
+	return nil
+}
+
+// FollowFeed creates a new feed follow relationship in the database for the current user and the specified feed URL.
+// Requires one argument: feed URL.
+// Wrapped with userLoggedInWrapper to ensure a user is logged in.
+func handlerFollowFeed(s *State, cmd Command, user database.User) error {
+	if len(cmd.Args) < 1 {
+		return fmt.Errorf("follow command requires feed URL argument")
+	}
+	
+	url := cmd.Args[0]
+	ctx := context.Background()
+
+
+	existingFeed, err := s.Db.GetFeedByUrl(ctx, url)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("error checking existing feeds: %v", err)
+	}
+
+
+	newFeedFollow := database.CreateFeedFollowParams{
+		ID:		uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		UserID:    uuid.NullUUID{UUID: user.ID, Valid: true},
+		FeedID:    uuid.NullUUID{UUID: existingFeed.ID, Valid: true},
+	}
+
+	currentFeedFollow, err := s.Db.CreateFeedFollow(ctx, newFeedFollow)
+	if err != nil {
+		return fmt.Errorf("error creating feedFollow: %v", err)
+	}
+	
+	fmt.Printf("%s followed feed: %s\n", currentFeedFollow.Username, currentFeedFollow.FeedName)
+	log.Printf("FeedFollow Info: %#v\n", currentFeedFollow)
+	
+	return nil
+}
+
+// Following lists all feeds followed by the current user.
+// Wrapped with userLoggedInWrapper to ensure a user is logged in.
+func handlerFollowing(s *State, cmd Command, user database.User) error {
 	userName := s.CurrentState.Current_user_name
 	ctx := context.Background()
 
-	existingUser, err := s.Db.GetUserByName(ctx, userName)
-	if err != nil && err != sql.ErrNoRows {
-		return fmt.Errorf("error checking existing user: %v", err)
-	}
-
-	followedFeeds, err := s.Db.GetFeedFollowsForUser(ctx, existingUser.ID)
+	followedFeeds, err := s.Db.GetFeedFollowsForUser(ctx, user.ID)
 	if err != nil {
 		return fmt.Errorf("error retrieving followed feeds: %v", err)
 	}
@@ -309,6 +309,7 @@ func handlerFollowing(s *State, cmd Command) error {
 	
 	return nil
 }
+
 
 // Reset removes all users from the database and clears the current user in the config.
 func handlerReset(s *State, cmd Command) error {
