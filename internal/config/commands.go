@@ -33,10 +33,11 @@ func (c *Commands) Init() {
 	c.registerCommand("reset", handlerReset)
 	c.registerCommand("users", handlerGetUsers)
 	c.registerCommand("agg", handlerFetchFeed)
-	c.registerCommand("addfeed", userLoggedInWrapper(handlerAddFeed))
 	c.registerCommand("feeds", handlerGetFeeds)
+	c.registerCommand("addfeed", userLoggedInWrapper(handlerAddFeed))
 	c.registerCommand("follow", userLoggedInWrapper(handlerFollowFeed))
 	c.registerCommand("following", userLoggedInWrapper(handlerFollowing))
+	c.registerCommand("unfollow", userLoggedInWrapper(handlerUnfollowFeed))
 }
 
 // Login sets the current user in the config if the user exists in the database.
@@ -292,7 +293,6 @@ func handlerFollowFeed(s *State, cmd Command, user database.User) error {
 // Following lists all feeds followed by the current user.
 // Wrapped with userLoggedInWrapper to ensure a user is logged in.
 func handlerFollowing(s *State, cmd Command, user database.User) error {
-	userName := s.CurrentState.Current_user_name
 	ctx := context.Background()
 
 	followedFeeds, err := s.Db.GetFeedFollowsForUser(ctx, user.ID)
@@ -300,13 +300,47 @@ func handlerFollowing(s *State, cmd Command, user database.User) error {
 		return fmt.Errorf("error retrieving followed feeds: %v", err)
 	}
 	if len(followedFeeds) == 0 {
-		return fmt.Errorf("user %s is not following any feeds", userName)
+		return fmt.Errorf("user %s is not following any feeds", user.Name)
 	}
 
 	for _, feed := range followedFeeds {
 		fmt.Printf("- %s (URL: %s)\n", feed.FeedName, feed.FeedUrl)
 	}
 	
+	return nil
+}
+
+// UnfollowFeed removes a feed follow relationship in the database for the current user and the specified feed URL.
+// Requires one argument: feed URL.
+// Wrapped with userLoggedInWrapper to ensure a user is logged in.
+func handlerUnfollowFeed(s *State, cmd Command, user database.User) error {
+	if len(cmd.Args) < 1 {
+		return fmt.Errorf("unfollow command requires feed URL argument")
+	}
+	
+	url := cmd.Args[0]
+	ctx := context.Background()
+
+	existingFeed, err := s.Db.GetFeedByUrl(ctx, url)
+	if err != nil && err != sql.ErrNoRows {
+		return fmt.Errorf("error checking existing feeds: %v", err)
+	}
+	if existingFeed == (database.Feed{}) {
+		return fmt.Errorf("feed with URL %s does not exist", url)
+	}
+
+	params := database.DeleteFeedFollowParams{
+		UserID: uuid.NullUUID{UUID: user.ID, Valid: true},
+		FeedID: uuid.NullUUID{UUID: existingFeed.ID, Valid: true},
+	}
+
+	err = s.Db.DeleteFeedFollow(ctx, params)
+	if err != nil {
+		return fmt.Errorf("error unfollowing feed: %v", err)
+	}
+
+	fmt.Printf("User %s unfollowed feed: %s\n", user.Name, existingFeed.Name)
+	log.Printf("Unfollowed Feed Info: UserID=%s, FeedID=%s\n", user.ID, existingFeed.ID)
 	return nil
 }
 

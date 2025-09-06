@@ -63,5 +63,8 @@ JOIN feeds ON feed_follows.feed_id = feeds.id
 WHERE users.id = $1
 ORDER BY feed_follows.created_at DESC;
 
+-- name: DeleteFeedFollow :exec
+DELETE FROM feed_follows WHERE user_id = $1 AND feed_id = $2;
+
 -- name: ResetUsers :exec
 DELETE FROM users;
