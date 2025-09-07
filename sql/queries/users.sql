@@ -39,6 +39,10 @@ JOIN feeds ON inserted.feed_id = feeds.id
 ORDER BY inserted.created_at DESC
 LIMIT 1;
 
+-- name: MarkFeedFetched :exec
+UPDATE feeds
+SET last_fetched_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+WHERE id = $1;
 
 -- name: GetUserByName :one
 SELECT * FROM users WHERE name = $1;
@@ -62,6 +66,11 @@ JOIN users ON feed_follows.user_id = users.id
 JOIN feeds ON feed_follows.feed_id = feeds.id
 WHERE users.id = $1
 ORDER BY feed_follows.created_at DESC;
+
+-- name: GetNextFeedToFetch :one
+SELECT * FROM feeds
+ORDER BY last_fetched_at NULLS FIRST
+LIMIT 1;
 
 -- name: DeleteFeedFollow :exec
 DELETE FROM feed_follows WHERE user_id = $1 AND feed_id = $2;
