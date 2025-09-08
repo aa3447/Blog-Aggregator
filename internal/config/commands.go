@@ -175,24 +175,55 @@ func handlerGetFeeds(s *State, cmd Command) error {
 	return nil
 }
 
-// FetchFeed fetches and prints the RSS feed from the specified URL.
-// Requires one argument: feed URL.
+// FetchFeed fetches and prints items from feeds at regular intervals.
+// Requires one argument: time between requests.
 func handlerFetchFeed(s *State, cmd Command) error {
+	
 	if len(cmd.Args) < 1 {
-		return fmt.Errorf("follow command requires feed URL argument")
+		return fmt.Errorf("follow command requires time between requests argument")
 	}
 
-	ctx := context.Background()
-	xml, err := rss.FetchFeed(ctx, cmd.Args[0])
-	
+	time_between_request, err :=  time.ParseDuration(cmd.Args[0])
 	if err != nil {
-		return fmt.Errorf("error fetching feed: %v", err)
+		return fmt.Errorf("invalid duration format: %v", err)
 	}
-	fmt.Println(xml)
-	for _, item := range xml.Channel.Item {
-		fmt.Println(item)	
+
+	fmt.Printf("Fetching feeds every %s...\n", time_between_request)
+	ticker := time.NewTicker(time_between_request)
+	defer ticker.Stop()
+	
+
+	for ; ; <-ticker.C {
+		err := scrapeFeeds(s)
+			if err != nil {
+				return fmt.Errorf("error fetching feed: %v", err)
+					
+			}
+	}
+}
+
+func scrapeFeeds(s *State) error {
+	ctx := context.Background()
+	feed, err := s.Db.GetNextFeedToFetch(ctx)
+	if err != nil {
+		return fmt.Errorf("error getting next feed to fetch: %v", err)
+	}
+	if feed == (database.Feed{}) {
+		return fmt.Errorf("no feeds to fetch")
 	}
 	
+	s.Db.MarkFeedFetched(ctx, feed.ID)
+
+	rssFeed , err := rss.FetchFeed(ctx, feed.Url)
+	if err != nil {
+		return fmt.Errorf("error fetching feed from URL %s: %v", feed.Url, err)
+	}
+
+	fmt.Printf("Fetched feed: %s\n", rssFeed.Channel.Title)
+	for _, item := range rssFeed.Channel.Item{
+		fmt.Println(item.Title)
+	}
+
 	return nil
 }
 
