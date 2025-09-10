@@ -28,6 +28,7 @@ type Commands struct {
 	CommandsMap map[string]func(*State, Command) error
 }
 
+// Init initializes the command handlers and registers them in the CommandsMap.
 func (c *Commands) Init() {
 	c.registerCommand("login", handlerLogin)
 	c.registerCommand("register", handlerRegisterUser)
@@ -55,8 +56,7 @@ func handlerLogin(s *State, cmd Command) error{
 	}	
 	
 	if s.CurrentState.Current_user_name == cmd.Args[0] {
-		fmt.Println("User is already set to:", cmd.Args[0])
-		return nil
+		return fmt.Errorf("user is already set to: %s", cmd.Args[0])
 	}
 	
 	err = s.CurrentState.SetUser(cmd.Args[0])
@@ -99,9 +99,12 @@ func handlerRegisterUser(s *State, cmd Command) error{
 	}
 
 	fmt.Println("User registered:", currentUser.Name)
-	log.Printf("User Info: %#v\n", currentUser)
 	
-	handlerLogin(s, Command{Name: "login", Args: []string{currentUser.Name}})
+	
+	err = handlerLogin(s, Command{Name: "login", Args: []string{currentUser.Name}})
+	if err != nil {
+		return fmt.Errorf("error logging in after registration: %v", err)
+	}
 	return nil
 }
 
@@ -116,8 +119,7 @@ func handlerGetUsers(s *State, cmd Command) error {
 		return fmt.Errorf("error retrieving users: %v", err)
 	}
 	if len(users) == 0 {
-		fmt.Println("No users found.")
-		return nil
+		return fmt.Errorf("no users found")
 	}
 	
 	fmt.Println("Registered Users:")
@@ -147,8 +149,7 @@ func handlerGetFeeds(s *State, cmd Command) error {
 		return fmt.Errorf("error retrieving feeds: %v", err)
 	}
 	if len(feeds) == 0 {
-		fmt.Println("No feeds found.")
-		return nil
+		return fmt.Errorf("no feeds found")
 	}
 	
 	fmt.Println("Feeds:")
@@ -254,7 +255,6 @@ func scrapeFeeds(s *State) error {
 			log.Printf("error creating post for feed %s: %v", feed.Url, err)
 			continue
 		}
-		log.Printf("New post added: %s (Feed: %s)", item.Title, feed.Name)
 	}
 
 	return nil
@@ -313,7 +313,6 @@ func handlerAddFeed(s *State, cmd Command, user database.User) error{
 	}
 
 	fmt.Println("User feed:", currentFeed.Url)
-	log.Printf("Feed Info: %#v\n", currentFeed)
 	
 	return nil
 }
@@ -350,7 +349,6 @@ func handlerFollowFeed(s *State, cmd Command, user database.User) error {
 	}
 	
 	fmt.Printf("%s followed feed: %s\n", currentFeedFollow.Username, currentFeedFollow.FeedName)
-	log.Printf("FeedFollow Info: %#v\n", currentFeedFollow)
 	
 	return nil
 }
@@ -365,10 +363,10 @@ func handlerFollowing(s *State, cmd Command, user database.User) error {
 		return fmt.Errorf("error retrieving followed feeds: %v", err)
 	}
 	if len(followedFeeds) == 0 {
-		fmt.Printf("user %s is not following any feeds\n", user.Name)
-		return  nil
+		return  fmt.Errorf("user %s is not following any feeds", user.Name)
 	}
 
+	fmt.Println("Followed Feeds:")
 	for _, feed := range followedFeeds {
 		fmt.Printf("- %s (URL: %s)\n", feed.FeedName, feed.FeedUrl)
 	}
@@ -406,10 +404,12 @@ func handlerUnfollowFeed(s *State, cmd Command, user database.User) error {
 	}
 
 	fmt.Printf("User %s unfollowed feed: %s\n", user.Name, existingFeed.Name)
-	log.Printf("Unfollowed Feed Info: UserID=%s, FeedID=%s\n", user.ID, existingFeed.ID)
 	return nil
 }
 
+// GetPosts retrieves and prints posts for the current user with pagination.
+// Requires two arguments: limit and offset.
+// Wrapped with userLoggedInWrapper to ensure a user is logged in.
 func handlerGetPosts(s *State, cmd Command, user database.User) error {
 	if len(cmd.Args) < 2 {
 		return fmt.Errorf("posts command requires limit and offset arguments")
@@ -436,8 +436,7 @@ func handlerGetPosts(s *State, cmd Command, user database.User) error {
 		return fmt.Errorf("error retrieving posts: %v", err)
 	}
 	if len(posts) == 0 {
-		fmt.Println("No posts found for user:", user.Name)
-		return nil
+		return fmt.Errorf("no posts found for user: %s", user.Name)
 	}
 	for _, post := range posts {
 		fmt.Printf("- %s (URL: %s, PublishedAt: %s)\n", post.Title, post.Url, post.PublishedAt.Time)
