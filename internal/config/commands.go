@@ -1,14 +1,15 @@
 package config
 
 import (
-	"fmt"
 	"context"
 	"database/sql"
-	"time"
+	"fmt"
 	"log"
-	
+	"strconv"
+	"time"
+
 	"github.com/google/uuid"
-	
+
 	"home/aa3447/workspace/github.com/aa3447/blog-aggregator/internal/database"
 	"home/aa3447/workspace/github.com/aa3447/blog-aggregator/internal/rss"
 )
@@ -38,6 +39,7 @@ func (c *Commands) Init() {
 	c.registerCommand("follow", userLoggedInWrapper(handlerFollowFeed))
 	c.registerCommand("following", userLoggedInWrapper(handlerFollowing))
 	c.registerCommand("unfollow", userLoggedInWrapper(handlerUnfollowFeed))
+	c.registerCommand("browse", userLoggedInWrapper(handlerGetPosts))
 }
 
 // Login sets the current user in the config if the user exists in the database.
@@ -205,6 +207,8 @@ func handlerFetchFeed(s *State, cmd Command) error {
 func scrapeFeeds(s *State) error {
 	ctx := context.Background()
 	feed, err := s.Db.GetNextFeedToFetch(ctx)
+	timeFormats := []string{time.RFC1123Z, time.RFC1123, time.RFC3339, time.RFC3339Nano}
+
 	if err != nil {
 		return fmt.Errorf("error getting next feed to fetch: %v", err)
 	}
@@ -219,13 +223,43 @@ func scrapeFeeds(s *State) error {
 		return fmt.Errorf("error fetching feed from URL %s: %v", feed.Url, err)
 	}
 
-	fmt.Printf("Fetched feed: %s\n", rssFeed.Channel.Title)
 	for _, item := range rssFeed.Channel.Item{
-		fmt.Println(item.Title)
+		var err error
+		var pubDate time.Time
+
+		for _, format := range timeFormats {
+			pubDate, err = time.Parse(format, item.PubDate)
+			if err == nil {
+				break
+			}
+		}
+		if err != nil {
+			log.Printf("error parsing publication date %s: %v", item.PubDate, err)
+			pubDate = time.Now()		
+		}
+
+		postParams := database.CreatePostParams{
+			ID:        uuid.New(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			FeedID:    uuid.NullUUID{UUID: feed.ID, Valid: true},
+			Title:    item.Title,
+			Url:      item.Link,
+			Description: sql.NullString{String: item.Description, Valid: true},
+			PublishedAt: sql.NullTime{Time: pubDate, Valid: true},
+		}
+		
+		_, err = s.Db.CreatePost(ctx, postParams)
+		if err != nil {
+			log.Printf("error creating post for feed %s: %v", feed.Url, err)
+			continue
+		}
+		log.Printf("New post added: %s (Feed: %s)", item.Title, feed.Name)
 	}
 
 	return nil
 }
+
 
 // userLoggedInWrapper is a helper function that ensures a user is logged in before executing the handler.
 func userLoggedInWrapper(handler func(s *State, cmd Command, user database.User) error)  func(*State, Command) error {
@@ -331,7 +365,8 @@ func handlerFollowing(s *State, cmd Command, user database.User) error {
 		return fmt.Errorf("error retrieving followed feeds: %v", err)
 	}
 	if len(followedFeeds) == 0 {
-		return fmt.Errorf("user %s is not following any feeds", user.Name)
+		fmt.Printf("user %s is not following any feeds\n", user.Name)
+		return  nil
 	}
 
 	for _, feed := range followedFeeds {
@@ -372,6 +407,42 @@ func handlerUnfollowFeed(s *State, cmd Command, user database.User) error {
 
 	fmt.Printf("User %s unfollowed feed: %s\n", user.Name, existingFeed.Name)
 	log.Printf("Unfollowed Feed Info: UserID=%s, FeedID=%s\n", user.ID, existingFeed.ID)
+	return nil
+}
+
+func handlerGetPosts(s *State, cmd Command, user database.User) error {
+	if len(cmd.Args) < 2 {
+		return fmt.Errorf("posts command requires limit and offset arguments")
+	}
+	
+	limit, err := strconv.Atoi(cmd.Args[0])
+	if err != nil {
+		return fmt.Errorf("invalid limit format: %v", err)
+	}
+	offset,err := strconv.Atoi(cmd.Args[1])
+	if err != nil {
+		return fmt.Errorf("invalid offset format: %v", err)
+	}
+
+	ctx := context.Background()
+	postParams := database.GetPostsForUserParams{
+		UserID: uuid.NullUUID{UUID: user.ID, Valid: true},
+		Limit: int32(limit),
+		Offset: int32(offset),
+	}
+
+	posts, err := s.Db.GetPostsForUser(ctx, postParams)
+	if err != nil {
+		return fmt.Errorf("error retrieving posts: %v", err)
+	}
+	if len(posts) == 0 {
+		fmt.Println("No posts found for user:", user.Name)
+		return nil
+	}
+	for _, post := range posts {
+		fmt.Printf("- %s (URL: %s, PublishedAt: %s)\n", post.Title, post.Url, post.PublishedAt.Time)
+	}
+
 	return nil
 }
 

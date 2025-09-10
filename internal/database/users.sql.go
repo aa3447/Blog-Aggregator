@@ -7,6 +7,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -111,6 +112,57 @@ func (q *Queries) CreateFeedFollow(ctx context.Context, arg CreateFeedFollowPara
 		&i.Username,
 		&i.FeedID,
 		&i.FeedName,
+	)
+	return i, err
+}
+
+const createPost = `-- name: CreatePost :one
+INSERT INTO posts (id, created_at, updated_at, feed_id, title, url, description, published_at)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8
+)
+RETURNING id, created_at, updated_at, feed_id, title, url, description, published_at
+`
+
+type CreatePostParams struct {
+	ID          uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	FeedID      uuid.NullUUID
+	Title       string
+	Url         string
+	Description sql.NullString
+	PublishedAt sql.NullTime
+}
+
+func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, error) {
+	row := q.db.QueryRowContext(ctx, createPost,
+		arg.ID,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+		arg.FeedID,
+		arg.Title,
+		arg.Url,
+		arg.Description,
+		arg.PublishedAt,
+	)
+	var i Post
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.FeedID,
+		&i.Title,
+		&i.Url,
+		&i.Description,
+		&i.PublishedAt,
 	)
 	return i, err
 }
@@ -313,6 +365,53 @@ func (q *Queries) GetNextFeedToFetch(ctx context.Context) (Feed, error) {
 		&i.UserID,
 	)
 	return i, err
+}
+
+const getPostsForUser = `-- name: GetPostsForUser :many
+SELECT posts.id, posts.created_at, posts.updated_at, posts.feed_id, posts.title, posts.url, posts.description, posts.published_at
+FROM posts
+JOIN feed_follows ON posts.feed_id = feed_follows.feed_id
+WHERE feed_follows.user_id = $1
+ORDER BY posts.published_at DESC
+LIMIT $2 OFFSET $3
+`
+
+type GetPostsForUserParams struct {
+	UserID uuid.NullUUID
+	Limit  int32
+	Offset int32
+}
+
+func (q *Queries) GetPostsForUser(ctx context.Context, arg GetPostsForUserParams) ([]Post, error) {
+	rows, err := q.db.QueryContext(ctx, getPostsForUser, arg.UserID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Post
+	for rows.Next() {
+		var i Post
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.FeedID,
+			&i.Title,
+			&i.Url,
+			&i.Description,
+			&i.PublishedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getUserByID = `-- name: GetUserByID :one

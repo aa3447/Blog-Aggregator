@@ -39,6 +39,20 @@ JOIN feeds ON inserted.feed_id = feeds.id
 ORDER BY inserted.created_at DESC
 LIMIT 1;
 
+-- name: CreatePost :one
+INSERT INTO posts (id, created_at, updated_at, feed_id, title, url, description, published_at)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8
+)
+RETURNING *;
+
 -- name: MarkFeedFetched :exec
 UPDATE feeds
 SET last_fetched_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
@@ -71,6 +85,14 @@ ORDER BY feed_follows.created_at DESC;
 SELECT * FROM feeds
 ORDER BY last_fetched_at NULLS FIRST
 LIMIT 1;
+
+-- name: GetPostsForUser :many
+SELECT posts.*
+FROM posts
+JOIN feed_follows ON posts.feed_id = feed_follows.feed_id
+WHERE feed_follows.user_id = $1
+ORDER BY posts.published_at DESC
+LIMIT $2 OFFSET $3;
 
 -- name: DeleteFeedFollow :exec
 DELETE FROM feed_follows WHERE user_id = $1 AND feed_id = $2;

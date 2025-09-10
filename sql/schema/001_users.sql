@@ -6,27 +6,6 @@ CREATE TABLE users (
     name TEXT UNIQUE NOT NULL
 );
 
-CREATE TABLE feeds (
-    id UUID PRIMARY KEY,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    last_fetched_at TIMESTAMP,
-    name TEXT NOT NULL,
-    url TEXT UNIQUE NOT NULL,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE
-);
-
-CREATE TABLE feed_follows (
-    id UUID PRIMARY KEY,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
-    feed_id UUID REFERENCES feeds(id) ON DELETE CASCADE,
-    UNIQUE (user_id, feed_id)
-);
-
 -- +goose Down
-DROP TABLE feed_follows;
-DROP TABLE feeds;
 DROP TABLE users;
 
